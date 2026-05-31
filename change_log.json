@@ -1,0 +1,44 @@
+{
+  "events": [
+    {
+      "timestamp": "2026-04-19T18:12:58",
+      "request_id": "0001",
+      "event": "created",
+      "status": "success",
+      "message": "Request created in GUI",
+      "artifacts": {}
+    },
+    {
+      "timestamp": "2026-04-19T18:13:03",
+      "request_id": "0001",
+      "event": "deleted",
+      "status": "success",
+      "message": "Request deleted",
+      "artifacts": {}
+    },
+    {
+      "timestamp": "2026-04-19T18:13:06",
+      "request_id": "0002",
+      "event": "created",
+      "status": "success",
+      "message": "Request created in GUI",
+      "artifacts": {}
+    },
+    {
+      "timestamp": "2026-04-19T18:19:29",
+      "request_id": "0002",
+      "event": "updated",
+      "status": "success",
+      "message": "Request edited in GUI",
+      "artifacts": {}
+    },
+    {
+      "timestamp": "2026-04-19T18:21:25",
+      "request_id": "0002",
+      "event": "prepared",
+      "status": "success",
+      "message": "Request prepared for export",
+      "artifacts": {}
+    }
+  ]
+}

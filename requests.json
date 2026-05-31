@@ -1,0 +1,24 @@
+{
+  "queue_order": [
+    "0002"
+  ],
+  "requests": {
+    "0002": {
+      "id": "0002",
+      "title": "New Request 0002",
+      "status": "prepared",
+      "priority": "medium",
+      "type": "feature",
+      "created": "2026-04-19T18:13:06",
+      "updated": "2026-04-19T18:21:26",
+      "base_dump_version": 1,
+      "user_goal": "Add a \"Planning\" tab to the financial page tabs. Under this tab, please add functionality for creating \"Plans\" which have two lists with records of monetary values and names: expenses and income. The expenses list will have the additional property of grouping by type. The user should be able to create expense groups, and then assign a new expense to a group or choose to have an expense unassigned. Please include a list of analytical data at the bottom of the two lists of a selected group. This information should display the percentage of expenses by expense type, give a warning if expenses exceed the listed income, and show any other relevant information to calculate and display in this window.",
+      "technical_constraints": "",
+      "files_or_areas": "",
+      "acceptance_criteria": "",
+      "implementation_notes": "",
+      "model_prompt_append": "Return a structured patch bundle.",
+      "prompt_file": "prompts\\request_0002_prompt_v0001.txt"
+    }
+  }
+}

@@ -1,0 +1,36 @@
+====================================================================================================
+PROJECT PLANS
+====================================================================================================
+Generated from requests.json
+
+====================================================================================================
+CHANGE REQUEST 0002
+====================================================================================================
+TITLE: New Request 0002
+STATUS: prepared
+PRIORITY: medium
+TYPE: feature
+CREATED: 2026-04-19T18:13:06
+UPDATED: 2026-04-19T18:21:26
+BASE_DUMP_VERSION: 1
+
+USER_GOAL:
+Add a "Planning" tab to the financial page tabs. Under this tab, please add functionality for creating "Plans" which have two lists with records of monetary values and names: expenses and income. The expenses list will have the additional property of grouping by type. The user should be able to create expense groups, and then assign a new expense to a group or choose to have an expense unassigned. Please include a list of analytical data at the bottom of the two lists of a selected group. This information should display the percentage of expenses by expense type, give a warning if expenses exceed the listed income, and show any other relevant information to calculate and display in this window.
+
+TECHNICAL_CONSTRAINTS:
+
+
+FILES_OR_AREAS:
+
+
+ACCEPTANCE_CRITERIA:
+
+
+IMPLEMENTATION_NOTES:
+
+
+MODEL_PROMPT_APPEND:
+Return a structured patch bundle.
+
+END CHANGE REQUEST 0002
+====================================================================================================
