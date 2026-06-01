@@ -30,6 +30,10 @@ Behavior
 - Can be run from CLI or by double-clicking the .py file.
 - If run without CLI arguments, opens a folder browser to select the project root.
 - Output ZIP is written by default to an auto-created FDTO_output folder beside this script.
+- The project folder browser opens immediately with no preliminary message popup.
+- After a successful run, the output ZIP file path is copied to the clipboard.
+- A persistent append-only run log is written to FDTO_output/FDTO_run_log.txt.
+- In interactive/double-click mode, the script exits without waiting for Enter.
 - Recursively scans all subdirectories.
 - Excludes generated dump artifacts so old dumps do not get included in new dumps.
 - Creates one ZIP file only; no output folder, no index file, no part files.
@@ -54,8 +58,11 @@ SUBSEP = "-" * 100
 
 DEFAULT_ZIP_PREFIX = "project_text_dump"
 DEFAULT_OUTPUT_FOLDER_NAME = "FDTO_output"
+DEFAULT_LOG_FILENAME = "FDTO_run_log.txt"
 LEGACY_OUTPUT_FOLDER_NAME = "project_dump_output"
 SAMPLE_SIZE = 8192
+
+_LOG_FILE_PATH: Path | None = None
 
 
 def get_script_directory() -> Path:
@@ -159,20 +166,87 @@ class FileRecord:
     error: str = ""
 
 
+def set_log_file_path(log_file_path: Path) -> None:
+    """
+    Sets the persistent append-only log file used by info/ok/warn/fail.
+    """
+    global _LOG_FILE_PATH
+    _LOG_FILE_PATH = log_file_path.resolve()
+    _LOG_FILE_PATH.parent.mkdir(parents=True, exist_ok=True)
+
+
+def append_log_line(prefix: str, message: str) -> None:
+    """
+    Appends one timestamped line to the persistent run log.
+    Logging failure should never stop the dump process.
+    """
+    if _LOG_FILE_PATH is None:
+        return
+
+    try:
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with _LOG_FILE_PATH.open("a", encoding="utf-8", newline="\n") as log_file:
+            log_file.write(f"{timestamp} {prefix} {message}\n")
+    except Exception:
+        pass
+
+
+def append_log_block(text: str) -> None:
+    """
+    Appends a raw block to the persistent run log.
+    """
+    if _LOG_FILE_PATH is None:
+        return
+
+    try:
+        with _LOG_FILE_PATH.open("a", encoding="utf-8", newline="\n") as log_file:
+            log_file.write(text)
+            if not text.endswith("\n"):
+                log_file.write("\n")
+    except Exception:
+        pass
+
+
 def info(message: str) -> None:
     print(f"[INFO] {message}")
+    append_log_line("[INFO]", message)
 
 
 def ok(message: str) -> None:
     print(f"[OK]   {message}")
+    append_log_line("[OK]  ", message)
 
 
 def warn(message: str) -> None:
     print(f"[WARN] {message}")
+    append_log_line("[WARN]", message)
 
 
 def fail(message: str) -> None:
     print(f"[ERROR] {message}", file=sys.stderr)
+    append_log_line("[ERROR]", message)
+
+
+def copy_text_to_clipboard(text: str) -> tuple[bool, str]:
+    """
+    Copies text to the system clipboard using tkinter only.
+    Returns (success, error_message).
+    """
+    try:
+        import tkinter as tk
+    except Exception as exc:
+        return False, f"tkinter unavailable: {exc}"
+
+    try:
+        root = tk.Tk()
+        root.withdraw()
+        root.clipboard_clear()
+        root.clipboard_append(text)
+        root.update()
+        root.destroy()
+        return True, ""
+    except Exception as exc:
+        return False, str(exc)
 
 
 def normalize_path_text(path_text: str) -> str:
@@ -665,56 +739,19 @@ def write_dump_zip(project_root: Path, output_zip_path: Path, calculate_hashes: 
 
 def select_project_root_with_folder_browser() -> Path | None:
     """
-    Opens a folder browser when no CLI project path is supplied.
+    Opens the folder browser immediately when no CLI project path is supplied.
     Falls back cleanly if tkinter is unavailable.
     """
     try:
         import tkinter as tk
-        from tkinter import filedialog, messagebox
+        from tkinter import filedialog
     except Exception:
         return None
 
     root = tk.Tk()
     root.withdraw()
-
-    messagebox.showinfo(
-        "Select Project Folder",
-        "Select the project/source folder to scan.\n\n"
-        "The script will create one ZIP file containing one consolidated text dump "
-        "of all readable text/source/config files."
-    )
 
     selected = filedialog.askdirectory(title="Select Project Folder to Dump")
-
-    root.destroy()
-
-    if not selected:
-        return None
-
-    return Path(selected)
-
-
-def select_output_dir_with_folder_browser() -> Path | None:
-    """
-    Opens a folder browser for selecting where the output ZIP should be written.
-    Falls back cleanly if tkinter is unavailable.
-    """
-    try:
-        import tkinter as tk
-        from tkinter import filedialog, messagebox
-    except Exception:
-        return None
-
-    root = tk.Tk()
-    root.withdraw()
-
-    messagebox.showinfo(
-        "Select Output Folder",
-        "Select the folder where the generated ZIP file should be saved.\n\n"
-        "The selected folder will receive the single project_text_dump_YYYYMMDD_HHMMSS.zip output file."
-    )
-
-    selected = filedialog.askdirectory(title="Select Output Folder for ZIP File")
 
     root.destroy()
 
@@ -787,9 +824,24 @@ def run(project_root: Path, args: argparse.Namespace) -> int:
         return 1
 
     output_dir = args.output_dir.expanduser().resolve() if args.output_dir else get_default_output_directory()
+    output_dir.mkdir(parents=True, exist_ok=True)
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_project_folder_name = sanitize_filename_component(project_root.name)
     output_zip_path = output_dir / f"{safe_project_folder_name}_{timestamp}.zip"
+    log_file_path = output_dir / DEFAULT_LOG_FILENAME
+
+    set_log_file_path(log_file_path)
+    append_log_block(
+        "\n"
+        f"{SEP}\n"
+        f"FDTO RUN START: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        f"Project root: {project_root}\n"
+        f"Output ZIP: {output_zip_path}\n"
+        f"Log file: {log_file_path}\n"
+        f"Hash mode: {'enabled' if args.hash else 'disabled'}\n"
+        f"{SEP}\n"
+    )
 
     output_zip_path, record_count, directory_count = write_dump_zip(
         project_root=project_root,
@@ -802,6 +854,20 @@ def run(project_root: Path, args: argparse.Namespace) -> int:
     ok(f"ZIP size: {format_size(output_zip_path.stat().st_size)}")
     ok(f"Directories scanned: {directory_count}")
     ok(f"Files logged: {record_count}")
+
+    clipboard_ok, clipboard_error = copy_text_to_clipboard(str(output_zip_path))
+    if clipboard_ok:
+        ok(f"Copied ZIP file path to clipboard: {output_zip_path}")
+    else:
+        warn(f"Could not copy ZIP file path to clipboard: {clipboard_error}")
+
+    ok(f"Run log updated: {log_file_path}")
+    append_log_block(
+        f"{SEP}\n"
+        f"FDTO RUN END: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        f"Result: success\n"
+        f"{SEP}\n"
+    )
     return 0
 
 
@@ -819,23 +885,15 @@ def main() -> int:
                 print("No folder selected. Operation cancelled.")
                 return 0
 
-            rc = run(project_root, args)
+            return run(project_root, args)
 
         except KeyboardInterrupt:
             print("\nCancelled.")
-            rc = 130
+            return 130
 
         except Exception as exc:
             fail(str(exc))
-            rc = 1
-
-        finally:
-            try:
-                input("\nPress Enter to close...")
-            except Exception:
-                pass
-
-        return rc
+            return 1
 
     try:
         project_root = args.project_root
