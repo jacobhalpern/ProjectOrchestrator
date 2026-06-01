@@ -31,8 +31,8 @@ Behavior
 - If run without CLI arguments, opens a folder browser to select the project root.
 - Output ZIP is written by default to an auto-created FDTO_output folder beside this script.
 - The project folder browser opens immediately with no preliminary message popup.
-- After a successful run, the output ZIP file path is copied to the clipboard.
-- A persistent append-only run log is written to FDTO_output/FDTO_run_log.txt.
+- After a successful run, the output ZIP file itself is copied to the Windows clipboard as a file object.
+- A persistent append-only run log is written beside the script as FDTO_run_log.txt.
 - In interactive/double-click mode, the script exits without waiting for Enter.
 - Recursively scans all subdirectories.
 - Excludes generated dump artifacts so old dumps do not get included in new dumps.
@@ -81,6 +81,13 @@ def get_default_output_directory() -> Path:
     The folder is created later by write_dump_zip if it does not already exist.
     """
     return get_script_directory() / DEFAULT_OUTPUT_FOLDER_NAME
+
+
+def get_default_log_file_path() -> Path:
+    """
+    Returns the persistent run-log path beside this script, not inside FDTO_output.
+    """
+    return get_script_directory() / DEFAULT_LOG_FILENAME
 
 
 def sanitize_filename_component(text: str) -> str:
@@ -227,24 +234,225 @@ def fail(message: str) -> None:
     append_log_line("[ERROR]", message)
 
 
-def copy_text_to_clipboard(text: str) -> tuple[bool, str]:
+def copy_file_to_clipboard(file_path: Path) -> tuple[bool, str]:
     """
-    Copies text to the system clipboard using tkinter only.
-    Returns (success, error_message).
+    Copies the actual file object to the Windows clipboard, equivalent to selecting
+    the ZIP file in File Explorer and pressing Ctrl+C.
+
+    This is intentionally different from copying path text. The clipboard data is
+    a file-drop list, so supported destinations can paste/upload the file itself.
+
+    Fallback order:
+    1. Windows CF_HDROP clipboard data through ctypes.
+    2. PowerShell STA Clipboard.SetFileDropList.
+
+    If both fail, the script does not fall back to text-copy behavior because that
+    would not satisfy the intended file-object clipboard workflow.
     """
-    try:
-        import tkinter as tk
-    except Exception as exc:
-        return False, f"tkinter unavailable: {exc}"
+    file_path = file_path.resolve()
+
+    if not file_path.exists():
+        return False, f"file does not exist: {file_path}"
+
+    attempts: list[str] = []
+
+    if os.name == "nt":
+        success, error = copy_file_to_clipboard_windows_api(file_path)
+        if success:
+            return True, "Windows CF_HDROP file clipboard"
+        attempts.append(f"Windows CF_HDROP failed: {error}")
+
+        success, error = copy_file_to_clipboard_powershell_filedrop(file_path)
+        if success:
+            return True, "PowerShell Clipboard.SetFileDropList"
+        attempts.append(f"PowerShell file-drop clipboard failed: {error}")
+
+        return False, " | ".join(attempts)
+
+    return False, "file-object clipboard copy is only implemented for Windows"
+
+
+def copy_file_to_clipboard_windows_api(file_path: Path) -> tuple[bool, str]:
+    """
+    Windows-native file clipboard copy using CF_HDROP through ctypes.
+
+    This places an actual file-drop object on the clipboard, not text. It is the
+    closest programmatic equivalent to selecting a file in Explorer and pressing
+    Ctrl+C.
+    """
+    if os.name != "nt":
+        return False, "not Windows"
 
     try:
-        root = tk.Tk()
-        root.withdraw()
-        root.clipboard_clear()
-        root.clipboard_append(text)
-        root.update()
-        root.destroy()
-        return True, ""
+        import ctypes
+        import time
+        from ctypes import wintypes
+    except Exception as exc:
+        return False, str(exc)
+
+    try:
+        file_path = file_path.resolve()
+        if not file_path.is_file():
+            return False, f"not a file: {file_path}"
+
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+
+        CF_HDROP = 15
+        GMEM_MOVEABLE = 0x0002
+
+        class POINT(ctypes.Structure):
+            _fields_ = [
+                ("x", wintypes.LONG),
+                ("y", wintypes.LONG),
+            ]
+
+        class DROPFILES(ctypes.Structure):
+            _fields_ = [
+                ("pFiles", wintypes.DWORD),
+                ("pt", POINT),
+                ("fNC", wintypes.BOOL),
+                ("fWide", wintypes.BOOL),
+            ]
+
+        user32.OpenClipboard.argtypes = [wintypes.HWND]
+        user32.OpenClipboard.restype = wintypes.BOOL
+        user32.EmptyClipboard.argtypes = []
+        user32.EmptyClipboard.restype = wintypes.BOOL
+        user32.SetClipboardData.argtypes = [wintypes.UINT, wintypes.HANDLE]
+        user32.SetClipboardData.restype = wintypes.HANDLE
+        user32.CloseClipboard.argtypes = []
+        user32.CloseClipboard.restype = wintypes.BOOL
+
+        kernel32.GlobalAlloc.argtypes = [wintypes.UINT, ctypes.c_size_t]
+        kernel32.GlobalAlloc.restype = wintypes.HGLOBAL
+        kernel32.GlobalLock.argtypes = [wintypes.HGLOBAL]
+        kernel32.GlobalLock.restype = wintypes.LPVOID
+        kernel32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
+        kernel32.GlobalUnlock.restype = wintypes.BOOL
+        kernel32.GlobalFree.argtypes = [wintypes.HGLOBAL]
+        kernel32.GlobalFree.restype = wintypes.HGLOBAL
+
+        dropfiles = DROPFILES()
+        dropfiles.pFiles = ctypes.sizeof(DROPFILES)
+        dropfiles.pt.x = 0
+        dropfiles.pt.y = 0
+        dropfiles.fNC = False
+        dropfiles.fWide = True
+
+        # CF_HDROP requires a double-null-terminated list of file paths.
+        file_list_bytes = (str(file_path) + "\0\0").encode("utf-16le")
+        payload = bytes(dropfiles) + file_list_bytes
+
+        opened = False
+        handle = None
+
+        try:
+            for _ in range(20):
+                if user32.OpenClipboard(None):
+                    opened = True
+                    break
+                time.sleep(0.05)
+
+            if not opened:
+                return False, f"OpenClipboard failed with error {ctypes.get_last_error()}"
+
+            handle = kernel32.GlobalAlloc(GMEM_MOVEABLE, len(payload))
+            if not handle:
+                return False, f"GlobalAlloc failed with error {ctypes.get_last_error()}"
+
+            pointer = kernel32.GlobalLock(handle)
+            if not pointer:
+                kernel32.GlobalFree(handle)
+                handle = None
+                return False, f"GlobalLock failed with error {ctypes.get_last_error()}"
+
+            ctypes.memmove(pointer, payload, len(payload))
+            kernel32.GlobalUnlock(handle)
+
+            if not user32.EmptyClipboard():
+                kernel32.GlobalFree(handle)
+                handle = None
+                return False, f"EmptyClipboard failed with error {ctypes.get_last_error()}"
+
+            if not user32.SetClipboardData(CF_HDROP, handle):
+                kernel32.GlobalFree(handle)
+                handle = None
+                return False, f"SetClipboardData(CF_HDROP) failed with error {ctypes.get_last_error()}"
+
+            # Clipboard now owns the memory handle.
+            handle = None
+            return True, ""
+
+        finally:
+            if handle:
+                try:
+                    kernel32.GlobalFree(handle)
+                except Exception:
+                    pass
+            if opened:
+                try:
+                    user32.CloseClipboard()
+                except Exception:
+                    pass
+
+    except Exception as exc:
+        return False, str(exc)
+
+
+def copy_file_to_clipboard_powershell_filedrop(file_path: Path) -> tuple[bool, str]:
+    """
+    Windows fallback that copies the actual file object using .NET WinForms.
+
+    This uses a STA PowerShell process and Clipboard.SetFileDropList, which creates
+    the same kind of file-drop clipboard data that File Explorer uses.
+    """
+    if os.name != "nt":
+        return False, "not Windows"
+
+    try:
+        import subprocess
+
+        file_path = file_path.resolve()
+        if not file_path.is_file():
+            return False, f"not a file: {file_path}"
+
+        creationflags = 0
+        if hasattr(subprocess, "CREATE_NO_WINDOW"):
+            creationflags = subprocess.CREATE_NO_WINDOW
+
+        ps_command = (
+            "Add-Type -AssemblyName System.Windows.Forms; "
+            "$files = New-Object System.Collections.Specialized.StringCollection; "
+            "$resolved = (Resolve-Path -LiteralPath $args[0]).ProviderPath; "
+            "[void]$files.Add($resolved); "
+            "[System.Windows.Forms.Clipboard]::SetFileDropList($files)"
+        )
+
+        completed = subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-STA",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                ps_command,
+                str(file_path),
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            creationflags=creationflags,
+            timeout=15,
+        )
+
+        if completed.returncode == 0:
+            return True, ""
+
+        return False, completed.stderr.strip() or f"return code {completed.returncode}"
+
     except Exception as exc:
         return False, str(exc)
 
@@ -390,6 +598,9 @@ def is_generated_dump_artifact(path: Path, zip_prefix: str) -> bool:
         return True
 
     if path.is_file() and name.startswith(f"{zip_prefix}_") and name.lower().endswith(".zip"):
+        return True
+
+    if path.is_file() and name == DEFAULT_LOG_FILENAME:
         return True
 
     return False
@@ -829,7 +1040,7 @@ def run(project_root: Path, args: argparse.Namespace) -> int:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_project_folder_name = sanitize_filename_component(project_root.name)
     output_zip_path = output_dir / f"{safe_project_folder_name}_{timestamp}.zip"
-    log_file_path = output_dir / DEFAULT_LOG_FILENAME
+    log_file_path = get_default_log_file_path()
 
     set_log_file_path(log_file_path)
     append_log_block(
@@ -855,11 +1066,13 @@ def run(project_root: Path, args: argparse.Namespace) -> int:
     ok(f"Directories scanned: {directory_count}")
     ok(f"Files logged: {record_count}")
 
-    clipboard_ok, clipboard_error = copy_text_to_clipboard(str(output_zip_path))
+    clipboard_ok, clipboard_detail = copy_file_to_clipboard(output_zip_path)
     if clipboard_ok:
-        ok(f"Copied ZIP file path to clipboard: {output_zip_path}")
+        ok(f"Copied ZIP file object to clipboard using {clipboard_detail}: {output_zip_path}")
     else:
-        warn(f"Could not copy ZIP file path to clipboard: {clipboard_error}")
+        warn(f"Could not copy ZIP file object to clipboard: {clipboard_detail}")
+        warn(f"Generated ZIP remains available here: {output_zip_path}")
+        warn(f"Output folder: {output_dir}")
 
     ok(f"Run log updated: {log_file_path}")
     append_log_block(
