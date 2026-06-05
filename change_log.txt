@@ -1,5 +1,0 @@
-2026-04-19T18:12:58 | 0001 | created | success | Request created in GUI
-2026-04-19T18:13:03 | 0001 | deleted | success | Request deleted
-2026-04-19T18:13:06 | 0002 | created | success | Request created in GUI
-2026-04-19T18:19:29 | 0002 | updated | success | Request edited in GUI
-2026-04-19T18:21:25 | 0002 | prepared | success | Request prepared for export
