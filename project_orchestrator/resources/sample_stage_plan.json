@@ -1,0 +1,18 @@
+{
+  "stages": [
+    {
+      "id": "STAGE_00",
+      "name": "Repository Foundation",
+      "status": "draft",
+      "depends_on": [],
+      "description": "Create deterministic project structure, build system, and test harness."
+    },
+    {
+      "id": "STAGE_01",
+      "name": "Core Domain Models",
+      "status": "draft",
+      "depends_on": ["STAGE_00"],
+      "description": "Implement stable value types and core project data structures."
+    }
+  ]
+}

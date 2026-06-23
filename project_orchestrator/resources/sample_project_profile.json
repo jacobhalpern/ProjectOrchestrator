@@ -1,0 +1,33 @@
+{
+  "project_name": "ExampleCppProject",
+  "project_root": "C:/Path/To/ExampleCppProject",
+  "language": "C++",
+  "cpp_standard": "C++20",
+  "build_system": "CMake",
+  "test_framework": "CTest",
+  "primary_ide": "Visual Studio",
+  "target_platforms": ["Windows"],
+  "allowed_dependencies": ["C++ Standard Library"],
+  "forbidden_dependencies": [],
+  "source_layout": {
+    "include_dir": "include",
+    "source_dir": "src",
+    "test_dir": "tests",
+    "docs_dir": "docs"
+  },
+  "build_profiles": [
+    {
+      "name": "Default",
+      "configure_command": null,
+      "build_command": "cmake --build build",
+      "test_command": "ctest --test-dir build --output-on-failure"
+    }
+  ],
+  "agent_policy": {
+    "require_task_packet": true,
+    "require_allowed_files": true,
+    "require_validation_before_approval": true,
+    "allow_auto_commit": false,
+    "allow_auto_merge": false
+  }
+}

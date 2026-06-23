@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TaskPacket",
+  "type": "object",
+  "required": ["task_id", "stage_id", "title", "objective", "allowed_files"],
+  "properties": {
+    "task_id": {"type": "string"},
+    "stage_id": {"type": "string"},
+    "title": {"type": "string"},
+    "objective": {"type": "string"},
+    "allowed_files": {"type": "array", "items": {"type": "string"}}
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ProjectProfile",
+  "type": "object",
+  "required": ["project_name", "project_root"],
+  "properties": {
+    "project_name": {"type": "string"},
+    "project_root": {"type": "string"},
+    "language": {"type": "string"},
+    "cpp_standard": {"type": "string"},
+    "build_system": {"type": "string"},
+    "test_framework": {"type": "string"}
+  }
+}

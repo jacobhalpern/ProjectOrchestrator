@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "project-orchestrator"
+version = "0.1.0"
+description = "A local governance tool for staged LLM-assisted C++ project development."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+gui = ["PySide6>=6.6"]
+
+[project.scripts]
+project-orchestrator = "project_orchestrator.cli.main:main"
+
+[tool.setuptools.packages.find]
+include = ["project_orchestrator*"]
+
+[tool.setuptools.package-data]
+project_orchestrator = ["templates/*.md", "resources/*.json", "schemas/*.json"]
